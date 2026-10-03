@@ -127,6 +127,9 @@ celerybeat.pid
 # Environments
 .env
 .venv
+
+# Machine-specific Windows USB mapping; tests use a synthetic fixture.
+/config_windows.json
 env/
 venv/
 ENV/

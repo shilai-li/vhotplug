@@ -1,0 +1,15 @@
+{
+  "general": {"api": {"enable": false}, "persistency": false},
+  "usbAuthorization": {"enable": false, "deauthorizeUnmatched": false},
+  "usbPassthrough": [
+    {
+      "description": "Synthetic test socket, not a deployment mapping",
+      "targetVm": "windows",
+      "allow": [{"bus": 4, "port": 1}, {"bus": 3, "port": 5}],
+      "deny": [{"deviceClass": 9}, {"interfaceClass": 9}]
+    }
+  ],
+  "pciPassthrough": [],
+  "evdevPassthrough": [],
+  "vms": [{"name": "windows", "type": "qemu", "socket": "/test/windows.sock", "usbHostDevice": true}]
+}

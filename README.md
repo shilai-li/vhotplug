@@ -39,6 +39,30 @@ The following parameters can be used for USB passthrough:
 Note: Many USB devices are composite devices, meaning they expose multiple interfaces. When matching against interfaceClass, interfaceSubclass and interfaceProtocol, it is sufficient for at least one interface to match the rule.
 In practice, matching by interfaces is often more reliable than using deviceClass, since many real-world USB devices leave the device-level class fields unset or use generic values like 0 (defined at the interface level instead).
 
+# QEMU USB direct-node mode (local extension)
+
+For Linux QEMU builds with the `usb-host.hostdevice` property, a VM can opt in to
+opening each device's current udev node directly:
+
+```json
+{"name": "windows", "type": "qemu", "socket": "/path/to/qmp.sock", "usbHostDevice": true}
+```
+
+The default remains `hostbus`/`hostaddr`. Only the JSON boolean `true` enables
+this mode. It bypasses stale libusb bus/address enumeration in container-hosted
+QEMU. On every plug event, vhotplug uses that event's `/dev/bus/usb/BBB/DDD` path;
+it does not cache a previous USB address. Unplug events retain the normal QMP
+`device_del` flow. Missing or malformed device-node paths fail explicitly, and
+unsupported QEMU builds fail rather than silently using the old lookup method.
+
+The container must see new device nodes (bind-mount `/dev/bus/usb`) and permit
+USB character-device access. The host daemon needs its protected QMP socket and
+device access. Host applications such as ADB can still claim USB interfaces;
+direct-node mode does not remove that ownership conflict. Existing allow/deny
+rules determine which physical port or device is forwarded, without broadening
+passthrough. Verify actual physical unplug/replug and guest recognition after
+deployment; a successful initial attach is not proof of hotplug.
+
 # PCI Devices
 
 The following parameters can be used for PCI passthrough:

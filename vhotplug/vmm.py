@@ -17,7 +17,7 @@ def _get_crosvm_bin(app_context: AppContext) -> str | None:
     return crosvm_bin if isinstance(crosvm_bin, str) else None
 
 
-async def vmm_add_device(app_context: AppContext, vm: dict[str, str], dev_info: USBInfo | PCIInfo | EvdevInfo) -> None:
+async def vmm_add_device(app_context: AppContext, vm: dict[str, Any], dev_info: USBInfo | PCIInfo | EvdevInfo) -> None:
     """Attaches a device to the VM based on the VMM type and device type."""
     vm_type = vm.get("type")
     vm_socket = vm.get("socket")
@@ -28,7 +28,7 @@ async def vmm_add_device(app_context: AppContext, vm: dict[str, str], dev_info: 
         qemu = QEMULink(vm_socket)
         if isinstance(dev_info, USBInfo):
             # await qemu.add_usb_device_by_vid_pid(usb_info)
-            await qemu.add_usb_device(dev_info)
+            await qemu.add_usb_device(dev_info, use_hostdevice=vm.get("usbHostDevice") is True)
         elif isinstance(dev_info, PCIInfo):
             await qemu.add_pci_device(dev_info)
         else:

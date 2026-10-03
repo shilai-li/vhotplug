@@ -219,7 +219,7 @@ class QEMULink:
         devs = await self.usb()
         return qemuid in devs
 
-    async def add_usb_device(self, usb_info: USBInfo) -> None:
+    async def add_usb_device(self, usb_info: USBInfo, *, use_hostdevice: bool = False) -> None:
         async with self._lock:
             if not self._wait_for_boot():
                 logger.warning("VM is not booted while adding device %s", usb_info.friendly_name())
@@ -241,15 +241,16 @@ class QEMULink:
                 usb_info.devnum,
                 self.socket_path,
             )
-            await self._execute(
-                "device_add",
-                {
-                    "driver": "usb-host",
-                    "hostbus": usb_info.busnum,
-                    "hostaddr": usb_info.devnum,
-                    "id": qemuid,
-                },
-            )
+            params: dict[str, Any] = {"driver": "usb-host", "id": qemuid}
+            if use_hostdevice:
+                # Use the current udev node on every attach, bypassing stale libusb
+                # bus/address enumeration in container-hosted QEMU.
+                if not usb_info.device_node or not re.fullmatch(r"/dev/bus/usb/[0-9]{3}/[0-9]{3}", usb_info.device_node):
+                    raise RuntimeError(f"Invalid USB device node for hostdevice: {usb_info.device_node!r}")
+                params["hostdevice"] = usb_info.device_node
+            else:
+                params.update(hostbus=usb_info.busnum, hostaddr=usb_info.devnum)
+            await self._execute("device_add", params)
             logger.info("Attached USB device %s with id %s", usb_info.friendly_name(), qemuid)
 
     async def add_usb_device_by_vid_pid(self, usb_info: USBInfo) -> None:
