@@ -130,6 +130,8 @@ celerybeat.pid
 
 # Machine-specific Windows USB mapping; tests use a synthetic fixture.
 /config_windows.json
+/.installer_venv/
+/wheelhouse/
 env/
 venv/
 ENV/

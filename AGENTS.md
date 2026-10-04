@@ -27,6 +27,14 @@ Direct-node mode addresses container QEMU/libusb inventories that remain stale a
 10. Leave the API, persistency, USB authorization/deauthorization, PCI passthrough, and evdev passthrough disabled unless the user specifically requests them.
 11. Do not commit or publish machine-specific configuration, credentials, captured logs, or backups without permission. Never run `git add -A` without reviewing the files.
 
+## Installer workflow
+
+Use `scripts/configure_windows_hotplug.sh` and follow [the installer guide](docs/windows_hotplug_installer.md) for deterministic deployment-file changes. The helper requires PyYAML; prepare the wheelhouse without elevation and select a root-controlled Python 3.13+ interpreter for the daemon. On Omarchy, first verify both the checkout and privileged launcher preserve YAML list indentation during security migration and explicitly clear source-directory setuid/setgid bits; the installer does not update that launcher.
+
+Start with `--plan` and explicitly supply the approved `--port BUS:ROOTPORT` pairs. Inspect conflicts rather than weakening safeguards. `--apply --yes` approves host-file changes only; `--allow-vm-restart`, `--start-service` and `--enable-autostart` are separate choices. Review static device IDs before using `--remove-static-id`. Never add permission flags simply to clear an error.
+
+Use `--verify` for read-only deployed/live checks and keep the real physical/guest verification requirements below. Installer sandbox tests are not evidence of a live host deployment. Do not apply the installer to an already working setup just to test the script. Use its reported backup path with `--rollback` only after reviewing the scope; restoring Compose still leaves the question of a separately approved container restart.
+
 ## 1. Discover the installation
 
 Use read-only checks to establish:
@@ -157,6 +165,7 @@ Read back the exact installed modules, configuration, and unit after deployment.
 Run repository tests and relevant lint checks:
 
 ```sh
+.venv/bin/python -m pip install '.[test]' ruff
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check vhotplug/qemulink.py vhotplug/vmm.py tests/test_qemu_usb_hotplug.py tests/test_windows_usb_ports.py
 ```

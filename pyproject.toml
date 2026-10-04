@@ -16,6 +16,10 @@ dependencies = [
     "qemu.qmp>=0.0.3",
 ]
 
+[project.optional-dependencies]
+installer = ["PyYAML>=6.0"]
+test = ["pytest>=8.0", "PyYAML>=6.0"]
+
 [project.scripts]
 vhotplug = "vhotplug.vhotplug:main"
 vhotplugcli = "vhotplugcli.vhotplugcli:main"

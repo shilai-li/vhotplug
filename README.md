@@ -63,6 +63,22 @@ rules determine which physical port or device is forwarded, without broadening
 passthrough. Verify actual physical unplug/replug and guest recognition after
 deployment; a successful initial attach is not proof of hotplug.
 
+# Docker Windows setup script
+
+For a reviewed, port-based installation, use the Bash entry point with its Python
+helper:
+
+```bash
+./scripts/configure_windows_hotplug.sh --help
+```
+
+The installer supports read-only planning, approved application, live checks and
+backup-based rollback. Physical-port mappings are explicit; stopping host
+applications, recreating Windows and enabling boot autostart are not implicit.
+See [the installer guide](docs/windows_hotplug_installer.md) for dependencies,
+wheel preparation, commands, safety boundaries and hardware verification.
+For AI-assisted discovery and deployment, start with [AGENTS.md](AGENTS.md).
+
 # PCI Devices
 
 The following parameters can be used for PCI passthrough:
