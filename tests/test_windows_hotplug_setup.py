@@ -122,8 +122,34 @@ def test_plan_preserves_unrelated_semantics_and_argument_bytes(setup_module, san
     assert config["vms"][0]["usbHostDevice"] is True
     assert config["usbPassthrough"][0]["allow"] == [{"bus": 17, "port": 3}]
     assert config["usbPassthrough"][0]["deny"] == [{"deviceClass": 9}, {"interfaceClass": 9}]
-    assert config["general"] == {"api": {"enable": False}, "persistency": False}
+    assert config["usbPassthrough"][0]["tag"] == "windows-usb"
+    assert config["usbPassthrough"][0]["autoAttach"] is False
+    assert config["general"] == {
+        "api": {
+            "enable": True,
+            "transports": ["unix"],
+            "unixSocket": "/var/lib/vhotplug/vhotplug.sock",
+            "unixSocketMode": "0600",
+        },
+        "persistency": False,
+    }
     assert setup_module.make_plan(options(setup_module, compose, sandbox))["compose"] == plan["compose"]
+
+
+def test_auto_attach_is_opt_in(setup_module, sandbox):
+    compose, _ = compose_file(sandbox)
+    plan = setup_module.make_plan(options(setup_module, compose, sandbox, "--auto-attach"))
+    assert json.loads(plan["config"])["usbPassthrough"][0]["autoAttach"] is True
+
+
+def test_api_socket_is_outside_container_visible_qmp_directory(setup_module, sandbox):
+    compose, _ = compose_file(sandbox)
+    args = options(setup_module, compose, sandbox)
+    api_socket = Path(setup_module.API_SOCKET)
+    assert not api_socket.is_relative_to(args.socket_dir)
+    unit = setup_module.unit_content(args, args.install_dir / "releases" / ("0" * 32)).decode()
+    assert "StateDirectory=vhotplug\nStateDirectoryMode=0700\n" in unit
+    assert api_socket.parent == Path("/var/lib/vhotplug")
 
 
 @pytest.mark.parametrize(

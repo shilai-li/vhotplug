@@ -54,6 +54,29 @@ USB2_BRANCH='BUS:ROOTPORT'  # Replace with an observed numeric pair.
 USB3_BRANCH='BUS:ROOTPORT'  # Replace with its separately observed companion.
 ```
 
+## Attach mode
+
+By default the selected socket is in **manual** mode: plugged-in devices stay on
+Linux, also when Windows starts or restarts, until you move them while Windows
+is running:
+
+```bash
+sudo ./scripts/windows_usb.sh attach   # devices in the socket go to Windows
+sudo ./scripts/windows_usb.sh detach   # they return to Linux; Windows keeps running
+sudo ./scripts/windows_usb.sh status   # which VM holds each device
+```
+
+The wrapper runs the installed release's `vhotplugcli` with the rule tag
+`<service>-usb` (override with `VHOTPLUG_USB_TAG`, and the install directory with
+`VHOTPLUG_INSTALL_DIR`). The daemon serves this API only on the root-only Unix
+socket `/var/lib/vhotplug/vhotplug.sock`, inside the unit's 0700 state directory
+and outside the QMP directory the container can see. Eject storage in Windows
+before detaching: to Windows, detaching is a cable pull. A device unplugged
+while attached returns to Linux when plugged in again; attach it again by command.
+
+Pass `--auto-attach` to apply to forward every matching device on plug-in
+instead, as earlier versions did. `--verify` reports the saved mode.
+
 ## Preview
 
 ```bash
@@ -125,10 +148,11 @@ Verification is read-only. It checks saved settings and installation plus the pr
 Then complete the hardware verification in [AGENTS.md](../AGENTS.md):
 
 1. Confirm selected-port devices match, unrelated sockets do not, and hubs stay on Linux.
-2. Confirm automatic attachment uses the device's **current** node and QEMU actually holds it.
+2. Confirm a plugged-in device stays on Linux, then `windows_usb.sh attach` uses the device's **current** node and QEMU actually holds it (with `--auto-attach`, confirm this on plug-in).
 3. Confirm useful recognition/function in Windows.
-4. Physically unplug/replug the leaf device; verify its newly enumerated node and guest return without a VM restart.
-5. Reconnect the whole hub with a child left inserted; verify the same criteria.
+4. Run `windows_usb.sh detach` and confirm the device returns to Linux while Windows keeps running; attach it again.
+5. Physically unplug/replug the leaf device; verify its newly enumerated node and that an attach returns it to the guest without a VM restart.
+6. Reconnect the whole hub with a child left inserted; verify the same criteria.
 
 J-Link/ST-LINK enumeration alone does not prove debugging, flashing, or firmware-update re-enumeration. These require their own functional tests. ADB and other host applications can independently reclaim interfaces; the installer never stops them silently.
 

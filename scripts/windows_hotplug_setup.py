@@ -69,6 +69,11 @@ def parse_args(argv=None):
     parser.add_argument("--start-service", action="store_true")
     parser.add_argument("--enable-autostart", action="store_true")
     parser.add_argument(
+        "--auto-attach",
+        action="store_true",
+        help="attach socket devices on plug-in; by default only `vhotplugcli usb attach --tag TAG` attaches them",
+    )
+    parser.add_argument(
         "--allow-vm-restart", action="store_true", help="WARNING: save Windows work before allowing recreation"
     )
     args = parser.parse_args(argv)
@@ -354,14 +359,28 @@ def patch_compose(document, args):
     return doc
 
 
+# Root-only manual attach/detach endpoint. It is vhotplugcli's default path, inside the unit's
+# 0700 StateDirectory, and deliberately outside the QMP directory that the container can see.
+API_SOCKET = "/var/lib/vhotplug/vhotplug.sock"
+
+
+def usb_tag(args):
+    return f"{args.service}-usb"
+
+
 def make_config(args):
     return {
-        "general": {"api": {"enable": False}, "persistency": False},
+        "general": {
+            "api": {"enable": True, "transports": ["unix"], "unixSocket": API_SOCKET, "unixSocketMode": "0600"},
+            "persistency": False,
+        },
         "usbAuthorization": {"enable": False, "deauthorizeUnmatched": False},
         "usbPassthrough": [
             {
                 "description": args.socket_label,
                 "targetVm": args.service,
+                "tag": usb_tag(args),
+                "autoAttach": args.auto_attach,
                 "allow": [{"bus": bus, "port": root} for bus, root in args.port],
                 "deny": [{"deviceClass": 9}, {"interfaceClass": 9}],
             }
@@ -512,6 +531,7 @@ def unit_content(args, release):
         "[Service]\nType=simple\nUser=root\nGroup=root\nUMask=0077\n"
         "Environment=PYTHONDONTWRITEBYTECODE=1\n"
         + runtime
+        + "StateDirectory=vhotplug\nStateDirectoryMode=0700\n"
         + f"ExecStart={release}/venv/bin/python -I -B -m vhotplug --attach-connected --config {args.config}\n"
         "Restart=on-failure\n[Install]\nWantedBy=multi-user.target\n"
     ).encode()
@@ -1110,6 +1130,8 @@ def verify(
         args.port = sorted({(rule["bus"], rule["port"]) for rule in saved_ports})
     expected_args = copy.copy(args)
     expected_args.socket_label = saved_selection["description"]
+    # The attach mode is a deployment choice, like the label: verify what was saved
+    expected_args.auto_attach = saved_selection.get("autoAttach") is True
     if not isinstance(saved_selection["description"], str) or json.dumps(config, sort_keys=True) != json.dumps(
         make_config(expected_args), sort_keys=True
     ):
@@ -1177,6 +1199,8 @@ def verify(
         "hostdevice_capability": True,
         "autostart": enabled.stdout.strip(),
         "saved_pending_restart": metadata["pending_vm_restart"],
+        "attach_mode": "automatic" if expected_args.auto_attach else "manual",
+        "usb_tag": usb_tag(args),
         "current_usb_nodes": current,
         "attached_current_nodes": sorted(set(leaves) & set(attached)),
         "node_owners": owners,
@@ -1222,9 +1246,20 @@ def main(argv=None, *, runner=run, policy=None, system_root=Path("/"), euid=None
             ", ".join(f"{bus}:{root}" for bus, root in args.port) or "none; --port required for apply",
         )
         print("Socket label:", args.socket_label, "QMP directory:", args.socket_dir)
+        print(
+            "Attach mode:",
+            "automatic on plug-in"
+            if args.auto_attach
+            else f"manual (vhotplugcli usb attach/detach --tag {usb_tag(args)})",
+            "API:",
+            API_SOCKET,
+            "(root-only Unix socket)",
+        )
         print("Installation:", args.install_dir, "config:", args.config, "unit:", args.unit_name)
         print("Observed sysfs topology (not a physical socket/companion mapping):", json.dumps(topology(args.port)))
-        print("No USB2/USB3 companion mapping inferred. Config/API/authorization/PCI/evdev remain restricted.")
+        print(
+            "No USB2/USB3 companion mapping inferred. API is root-only Unix; authorization/PCI/evdev stay restricted."
+        )
         print("Apply requires root-controlled target ancestry, Python >=3.13, prebuilt --wheelhouse and --yes.")
         return 0
     except Exception as error:

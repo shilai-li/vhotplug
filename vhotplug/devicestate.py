@@ -77,6 +77,10 @@ class DeviceState:
             elif dev_info.address in self.pci_device_vm_map:
                 del self.pci_device_vm_map[dev_info.address]
 
+    def remove_usb_device_node(self, device_node: str) -> None:
+        with self.lock:
+            self.usb_device_vm_map.pop(device_node, None)
+
     def select_vm_for_device(self, dev_info: USBInfo | PCIInfo, vm_name: str) -> None:
         with self.lock:
             self.selected_vms[dev_info.persistent_id()] = vm_name

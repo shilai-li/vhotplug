@@ -16,6 +16,7 @@ from vhotplug.device import (
     deauthorize_unmatched_usb,
     detach_disconnected_pci,
     find_vm_for_device,
+    forget_usb_devices_of_vms,
     get_usb_info,
     is_usb_device,
     log_detected_devices,
@@ -78,7 +79,11 @@ async def device_event(app_context: AppContext, device: pyudev.Device) -> None:
 
             try:
                 res = find_vm_for_device(app_context, usb_info)
-                if res:
+                if res and not res.auto_attach:
+                    logger.info(
+                        "USB device %s requires manual attach, leaving it on the host", usb_info.friendly_name()
+                    )
+                elif res:
                     await attach_device(app_context, res, usb_info, True)
                 elif app_context.config.usb_authorization_host_allowed(usb_info):
                     logger.info("USB device %s is allowed on host, authorizing", usb_info.friendly_name())
@@ -112,6 +117,17 @@ async def device_event(app_context: AppContext, device: pyudev.Device) -> None:
             )
 
 
+def _vm_names_by_sockets(app_context: AppContext, sockets: list[str]) -> list[str]:
+    vm_names: list[str] = []
+    for sock in sockets:
+        vm = app_context.config.get_vm_by_socket(sock)
+        if vm:
+            vm_name = vm.get("name")
+            if vm_name:
+                vm_names.append(vm_name)
+    return vm_names
+
+
 async def monitor_loop(app_context: AppContext, file_watcher: FileWatcher, attach_connected: bool) -> None:
     while True:
         device = await asyncio.to_thread(app_context.udev_monitor.poll, 1)
@@ -119,16 +135,13 @@ async def monitor_loop(app_context: AppContext, file_watcher: FileWatcher, attac
             await device_event(app_context, device)
 
         # Detect if any VMs restarted
-        vm_restart_detected, sockets_restarted = file_watcher.detect_restart()
-        if vm_restart_detected and attach_connected:
-            vms_restarted: list[str] = []
-            for sock in sockets_restarted:
-                vm = app_context.config.get_vm_by_socket(sock)
-                if vm:
-                    vm_name = vm.get("name")
-                    if vm_name:
-                        vms_restarted.append(vm_name)
+        vm_restart_detected, sockets_restarted, sockets_stopped = file_watcher.detect_restart()
+        vms_restarted = _vm_names_by_sockets(app_context, sockets_restarted)
 
+        # USB devices attached to a stopped or restarted VM are no longer in it
+        forget_usb_devices_of_vms(app_context, _vm_names_by_sockets(app_context, sockets_stopped) + vms_restarted)
+
+        if vm_restart_detected and attach_connected:
             # Check non-USB evdev devices for restarted VMs
             await attach_connected_evdev(app_context)
             # Check PCI devices for restarted VMs

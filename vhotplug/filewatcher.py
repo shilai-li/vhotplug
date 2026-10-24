@@ -37,9 +37,10 @@ class FileWatcher:
         else:
             self.watch_descriptors[wd]["files"].add(filename)
 
-    def detect_restart(self) -> tuple[bool, list[str]]:
+    def detect_restart(self) -> tuple[bool, list[str], list[str]]:
         vm_restart_detected = False
         vms_restarted: list[str] = []
+        vms_stopped: list[str] = []
         try:
             events = self.inotify.read(timeout=0)
             for event in events:
@@ -54,6 +55,7 @@ class FileWatcher:
                         vms_restarted.append(file_path)
                     if event.mask & flags.DELETE:
                         logger.info("VM %s stopped", file_path)
+                        vms_stopped.append(file_path)
         except OSError:
             pass
-        return vm_restart_detected, vms_restarted
+        return vm_restart_detected, vms_restarted, vms_stopped

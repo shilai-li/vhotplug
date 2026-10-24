@@ -442,6 +442,8 @@ async def attach_connected_usb(
     else:
         logger.info("Attaching USB devices for %s", vms_scope)
 
+    matched = 0
+    failed: list[str] = []
     for device in app_context.udev_context.list_devices(subsystem="usb"):
         if is_usb_device(device):
             usb_info = get_usb_info(device)
@@ -476,10 +478,32 @@ async def attach_connected_usb(
                 if tag and res.tag != tag:
                     continue
 
+                # Manual-attach devices are only attached when the user explicitly requests them by tag
+                if tag is None and not res.auto_attach:
+                    logger.info("USB device %s requires manual attach, skipping", usb_info.friendly_name())
+                    continue
+
+                matched += 1
                 try:
                     await attach_device(app_context, res, usb_info, False, vms_scope)
                 except RuntimeError:
                     logger.exception("Failed to attach USB device %s", usb_info.friendly_name())
+                    failed.append(usb_info.friendly_name())
+
+    # Report the outcome of an explicit request by tag to the API caller
+    if tag is not None:
+        if failed:
+            raise RuntimeError(f"Failed to attach USB devices with tag {tag}: {', '.join(failed)}")
+        if not matched:
+            raise RuntimeError(f"No connected USB devices match tag {tag}")
+
+
+def forget_usb_devices_of_vms(app_context: AppContext, vms: list[str]) -> None:
+    """Drops stale USB attachments of VMs that restarted, since a new VMM process starts without them."""
+    for device_node, vm_name in app_context.dev_state.list_usb_devices().items():
+        if vm_name in vms:
+            logger.info("Forgetting %s attached to %s before it restarted", device_node, vm_name)
+            app_context.dev_state.remove_usb_device_node(device_node)
 
 
 async def detach_connected_usb(
@@ -497,6 +521,7 @@ async def detach_connected_usb(
     else:
         logger.info("Detaching USB devices from %s", vms_scope)
 
+    failed: list[str] = []
     for device_node in app_context.dev_state.list_usb_devices():
         device = usb_device_by_node(app_context, device_node)
         if device is None:
@@ -531,8 +556,13 @@ async def detach_connected_usb(
                     await _remove_existing_device(app_context, usb_info, permanent)
                 except RuntimeError:
                     logger.exception("Failed to remove %s", usb_info.friendly_name())
+                    failed.append(usb_info.friendly_name())
             else:
                 logger.warning("Device %s does not match any rules", usb_info.friendly_name())
+
+    # Report the outcome of an explicit request by tag to the API caller
+    if tag is not None and failed:
+        raise RuntimeError(f"Failed to detach USB devices with tag {tag}: {', '.join(failed)}")
 
 
 async def attach_existing_pci_device(app_context: AppContext, pci_address: str, selected_vm: str | None) -> None:

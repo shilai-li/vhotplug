@@ -22,6 +22,7 @@ class PassthroughInfo:
     qemu_use_root_bus: bool = False
     order: int = 0
     tag: str | None = None
+    auto_attach: bool = True
 
 
 @dataclass
@@ -327,7 +328,12 @@ class Config:
 
                     skip_on_suspend = rule.get("skipOnSuspend", False)
                     tag = rule.get("tag")
-                    return PassthroughInfo(target_vm, allowed_vms, skip_on_suspend, tag=tag)
+                    auto_attach = rule.get("autoAttach", True)
+                    if not isinstance(auto_attach, bool):
+                        # Fail safe: a malformed value must not hand devices to the VM
+                        logger.error("autoAttach must be a boolean in rule %s, treating as false", rule_name)
+                        auto_attach = False
+                    return PassthroughInfo(target_vm, allowed_vms, skip_on_suspend, tag=tag, auto_attach=auto_attach)
 
         except (AttributeError, TypeError):
             logger.exception("Failed to find VM for USB device in the configuration file")

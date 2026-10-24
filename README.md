@@ -63,6 +63,23 @@ rules determine which physical port or device is forwarded, without broadening
 passthrough. Verify actual physical unplug/replug and guest recognition after
 deployment; a successful initial attach is not proof of hotplug.
 
+# Manual attach (local extension)
+
+A USB rule can set `"autoAttach": false` so that matching devices stay on the
+host when they are plugged in, when vhotplug starts and when the VM restarts.
+They move to the VM only on an explicit API request, typically by the rule's tag:
+
+```bash
+vhotplugcli usb attach --tag windows-usb   # give the devices to the running VM
+vhotplugcli usb detach --tag windows-usb   # return them to the host, VM keeps running
+vhotplugcli usb list --tag windows-usb     # "vm" shows who holds each device
+```
+
+Attaching by tag fails if no connected device matches or if any device cannot be
+attached (for example, the VM is not running). A device that is unplugged while
+attached comes back on the host when it is plugged in again. Any value other
+than the JSON booleans is treated as `false`.
+
 # Docker Windows setup script
 
 For a reviewed, port-based installation, use the Bash entry point with its Python

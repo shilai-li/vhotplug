@@ -154,7 +154,8 @@ For a persistent privileged service:
 - Install the reviewed local configuration under `/etc/vhotplug` with root-controlled permissions.
 - Launch the installed interpreter with `-m vhotplug --attach-connected --config CONFIG_PATH`.
 - Use a root-controlled systemd unit if the host supports systemd. Coordinate `RuntimeDirectory`, its permissions and lifetime, the Compose mount, and the QMP path. If the service creates the directory, account for startup ordering and preserve it while QEMU still uses it.
-- A service that may start before the VM must watch for its QMP socket and attach matching connected devices when it becomes available. Inspect the existing file-watcher behavior rather than inventing a separate polling daemon.
+- The installer's default is manual attach (`"autoAttach": false` on the socket rule): devices stay on Linux until `sudo scripts/windows_usb.sh attach` while Windows runs, and `detach` returns them. Its API is unix-only and root-only at `/var/lib/vhotplug/vhotplug.sock`; never place it in the container-visible QMP directory or enable TCP/vsock for it.
+- A service that may start before the VM must watch for its QMP socket and, in automatic mode, attach matching connected devices when it becomes available. Inspect the existing file-watcher behavior rather than inventing a separate polling daemon.
 - Restart only vhotplug when updating its package or configuration, unless the container settings themselves changed.
 - Check both `is-active` and `is-enabled`. Ask separately whether the user wants host-boot autostart; an active service may still be disabled at boot.
 
@@ -176,10 +177,10 @@ Hardware verification requires all of the following, not just passing unit tests
 
 1. Confirm that a device on the selected branch matches the Windows rule and that representative devices on other sockets do not.
 2. Confirm the hub remains bound to Linux's `hub` driver and is not forwarded itself.
-3. Confirm a real leaf device is attached automatically. Read QMP `qom-get` for `/machine/peripheral/DEVICE_ID`, property `hostdevice`; it must equal the current sysfs-derived USB node.
+3. Confirm a real leaf device stays on Linux when plugged in, and is attached by `windows_usb.sh attach` (automatically with `--auto-attach`). Read QMP `qom-get` for `/machine/peripheral/DEVICE_ID`, property `hostdevice`; it must equal the current sysfs-derived USB node.
 4. Check ownership of the current node with `sudo fuser -v /dev/bus/usb/BBB/DDD`. The QEMU process must actually hold it. A QMP command that returns success or a generic empty USB placeholder is insufficient.
 5. Confirm recognition and useful function in Windows: a phone in Explorer/MTP or a CH340 under Device Manager's Ports category. Test actual debugging/flashing separately for debug probes.
-6. Physically unplug/replug the leaf device, then verify the newly enumerated node is attached without a VM restart. Monitor-only detach/attach does not exercise this path.
+6. Physically unplug/replug the leaf device, then verify the newly enumerated node is attached (by command in manual mode) without a VM restart. Monitor-only detach/attach does not exercise this path. In manual mode also confirm `windows_usb.sh detach` returns the device to Linux's drivers while Windows keeps running.
 7. With a hub, physically unplug/replug the upstream hub cable while leaving a leaf device inserted. Verify the hub and leaf re-enumerate, the child returns in Windows, and old QEMU objects are cleaned up.
 8. Confirm Windows was not restarted during the reconnect tests. If guest inspection tools are unavailable, ask the user for the guest result and distinguish their confirmation from host-side observations.
 
@@ -193,6 +194,7 @@ A bounded read-only topology/QMP monitor can run while the user performs the phy
 | Hub disappears or children disconnect unexpectedly | Hub exclusions and whether the hub is still bound to Linux |
 | New node exists but bus/address attachment fails | Stale container libusb enumeration, `usbHostDevice: true`, and supported `hostdevice` property |
 | QEMU cannot open or claim the new node | Container visibility, permissions, current node, kernel drivers, and competing host applications |
+| `windows_usb.sh attach` says no device matches | Device is plugged into the selected socket branches, rule tag equals `<service>-usb`, daemon runs the manual-mode config |
 | Initial attachment works but reconnect fails | Fresh event node, running installed package/config, removal logs, and new-node ownership |
 | Windows sees an unknown device but QEMU owns the node | Guest driver installation and device-specific compatibility |
 | Source changes have no effect | The daemon's actual installed package path and whether it was restarted |

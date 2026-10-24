@@ -222,8 +222,8 @@ class QEMULink:
     async def add_usb_device(self, usb_info: USBInfo, *, use_hostdevice: bool = False) -> None:
         async with self._lock:
             if not self._wait_for_boot():
-                logger.warning("VM is not booted while adding device %s", usb_info.friendly_name())
-                return
+                # Raise so the device is not recorded as attached to a VM that is not running
+                raise RuntimeError(f"VM is not booted while adding device {usb_info.friendly_name()}")
 
             qemuid = self._qemu_id_usb(usb_info)
             if await self._find_usb_device(qemuid):
