@@ -26,6 +26,10 @@ class DeviceState:
         # Persistent set of devices permanently disconnected by the user
         self.disconnected_devices: set[str] = set()
 
+        # Runtime map of manual-attach rule tag - VMs it was attached to by the user.
+        # Re-plugged devices with such a tag follow them until detach or VM stop.
+        self.attached_tags: dict[str, set[str]] = {}
+
         # Load data from a JSON file if persistence is enabled
         if self.persistent:
             assert db_path is not None, "db_path must be provided when persistent=True"
@@ -114,6 +118,26 @@ class DeviceState:
                 self._save()
                 return True
         return False
+
+    def set_tag_attached(self, tag: str, vms: set[str]) -> None:
+        with self.lock:
+            if vms:
+                self.attached_tags.setdefault(tag, set()).update(vms)
+
+    def clear_tag_attached(self, tag: str) -> None:
+        with self.lock:
+            self.attached_tags.pop(tag, None)
+
+    def clear_vms_attached(self, vms: list[str]) -> None:
+        with self.lock:
+            for tag in list(self.attached_tags):
+                self.attached_tags[tag].difference_update(vms)
+                if not self.attached_tags[tag]:
+                    del self.attached_tags[tag]
+
+    def get_tag_attached_vms(self, tag: str | None) -> list[str]:
+        with self.lock:
+            return sorted(self.attached_tags.get(tag, set())) if tag is not None else []
 
     def list_usb_devices(self) -> dict[str, str]:
         with self.lock:

@@ -77,7 +77,8 @@ vhotplugcli usb list --tag windows-usb     # "vm" shows who holds each device
 
 Attaching by tag fails if no connected device matches or if any device cannot be
 attached (for example, the VM is not running). A device that is unplugged while
-attached comes back on the host when it is plugged in again. Any value other
+attached by tag goes back to the same VM when it is plugged in again, until
+the tag is detached or the VM stops or restarts. Any value other
 than the JSON booleans is treated as `false`.
 
 # Docker Windows setup script

@@ -394,7 +394,7 @@ async def attach_existing_usb_device_by_vid_pid(
 
 
 async def attach_existing_usb_devices_by_tag(app_context: AppContext, tag: str) -> None:
-    """Find USB devices by tag and attach to VM."""
+    """Find USB devices by tag and attach to VM; re-plugged devices of a manual-attach tag then follow."""
     await attach_connected_usb(app_context, tag=tag)
 
 
@@ -427,7 +427,8 @@ async def remove_existing_usb_device_by_vid_pid(
 
 
 async def remove_existing_usb_devices_by_tag(app_context: AppContext, tag: str, permanent: bool = False) -> None:
-    """Find USB devices by tag and detach from VM."""
+    """Find USB devices by tag and detach from VM; re-plugged devices of the tag stay on the host."""
+    app_context.dev_state.clear_tag_attached(tag)
     await detach_connected_usb(app_context, tag=tag, permanent=permanent)
 
 
@@ -444,6 +445,7 @@ async def attach_connected_usb(
 
     matched = 0
     failed: list[str] = []
+    attached_vms: set[str] = set()
     for device in app_context.udev_context.list_devices(subsystem="usb"):
         if is_usb_device(device):
             usb_info = get_usb_info(device)
@@ -489,6 +491,15 @@ async def attach_connected_usb(
                 except RuntimeError:
                     logger.exception("Failed to attach USB device %s", usb_info.friendly_name())
                     failed.append(usb_info.friendly_name())
+                    continue
+
+                # Remember where the user sent a manual-attach tag so re-plugged devices go back there
+                current_vm_name = app_context.dev_state.get_vm_for_device(usb_info)
+                if tag is not None and not res.auto_attach and current_vm_name:
+                    attached_vms.add(current_vm_name)
+
+    if tag is not None:
+        app_context.dev_state.set_tag_attached(tag, attached_vms)
 
     # Report the outcome of an explicit request by tag to the API caller
     if tag is not None:
@@ -504,6 +515,8 @@ def forget_usb_devices_of_vms(app_context: AppContext, vms: list[str]) -> None:
         if vm_name in vms:
             logger.info("Forgetting %s attached to %s before it restarted", device_node, vm_name)
             app_context.dev_state.remove_usb_device_node(device_node)
+    # A stopped or restarted VM starts over with its manual-attach devices on the host
+    app_context.dev_state.clear_vms_attached(vms)
 
 
 async def detach_connected_usb(

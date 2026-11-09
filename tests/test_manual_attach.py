@@ -96,11 +96,10 @@ def test_detach_by_tag_reports_failures(monkeypatch: pytest.MonkeyPatch) -> None
         asyncio.run(device_module.detach_connected_usb(app, tag="windows-usb", permanent=True))
 
 
-def test_plug_event_leaves_manual_device_on_host(monkeypatch: pytest.MonkeyPatch) -> None:
-    dev = usb_device("/dev/bus/usb/004/005")
+def plug_event_app(monkeypatch: pytest.MonkeyPatch, dev: USBInfo, attach: AsyncMock) -> Mock:
     app = Mock(api_server=None)
+    app.dev_state = DeviceState()
     app.config.usb_authorization_enabled.return_value = False
-    attach = AsyncMock()
     monkeypatch.setattr(daemon_module, "is_usb_device", lambda _dev: True)
     monkeypatch.setattr(daemon_module, "get_usb_info", lambda _dev: dev)
     monkeypatch.setattr(daemon_module, "get_drivers_from_modaliases", lambda *_args: [])
@@ -108,11 +107,62 @@ def test_plug_event_leaves_manual_device_on_host(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(daemon_module, "log_device", lambda _dev: None)
     monkeypatch.setattr(daemon_module, "find_vm_for_device", lambda *_args: MANUAL)
     monkeypatch.setattr(daemon_module, "attach_device", attach)
+    return app
+
+
+def test_plug_event_leaves_manual_device_on_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    dev = usb_device("/dev/bus/usb/004/005")
+    attach = AsyncMock()
+    app = plug_event_app(monkeypatch, dev, attach)
 
     asyncio.run(daemon_module.device_event(app, Mock(action="add", device_node=dev.device_node)))
 
     attach.assert_not_awaited()
     app.config.usb_authorization_host_allowed.assert_not_called()
+
+
+def recording_attach(app: Mock) -> AsyncMock:
+    async def attach(_app: Mock, res: PassthroughInfo, usb_info: USBInfo, *_args: object) -> None:
+        app.dev_state.set_vm_for_device(usb_info, res.target_vm)
+
+    return AsyncMock(side_effect=attach)
+
+
+def test_attach_by_tag_makes_replugged_devices_follow(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = app_with_devices(monkeypatch, [usb_device("/dev/bus/usb/004/005")], MANUAL)
+    monkeypatch.setattr(device_module, "attach_device", recording_attach(app))
+    asyncio.run(device_module.attach_existing_usb_devices_by_tag(app, "windows-usb"))
+    assert app.dev_state.get_tag_attached_vms("windows-usb") == ["windows"]
+
+    # The device is unplugged and plugged in again with a new node
+    replugged = usb_device("/dev/bus/usb/004/006")
+    attach = AsyncMock()
+    plug_app = plug_event_app(monkeypatch, replugged, attach)
+    plug_app.dev_state = app.dev_state
+    asyncio.run(daemon_module.device_event(plug_app, Mock(action="add", device_node=replugged.device_node)))
+
+    attach.assert_awaited_once_with(plug_app, MANUAL, replugged, False, ["windows"])
+
+
+def test_failed_attach_by_tag_does_not_make_devices_follow(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = app_with_devices(monkeypatch, [usb_device("/dev/bus/usb/004/005")], MANUAL)
+    monkeypatch.setattr(device_module, "attach_device", AsyncMock(side_effect=RuntimeError("VM is not booted")))
+    with pytest.raises(RuntimeError):
+        asyncio.run(device_module.attach_existing_usb_devices_by_tag(app, "windows-usb"))
+    assert app.dev_state.get_tag_attached_vms("windows-usb") == []
+
+
+def test_detach_by_tag_and_vm_stop_keep_replugged_devices_on_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = app_with_devices(monkeypatch, [], MANUAL)
+    monkeypatch.setattr(device_module, "detach_connected_usb", AsyncMock())
+
+    app.dev_state.set_tag_attached("windows-usb", {"windows"})
+    asyncio.run(device_module.remove_existing_usb_devices_by_tag(app, "windows-usb", True))
+    assert app.dev_state.get_tag_attached_vms("windows-usb") == []
+
+    app.dev_state.set_tag_attached("windows-usb", {"windows", "other"})
+    device_module.forget_usb_devices_of_vms(app, ["windows"])
+    assert app.dev_state.get_tag_attached_vms("windows-usb") == ["other"]
 
 
 def test_vm_stop_or_restart_forgets_its_usb_devices() -> None:

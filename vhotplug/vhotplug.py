@@ -79,7 +79,16 @@ async def device_event(app_context: AppContext, device: pyudev.Device) -> None:
 
             try:
                 res = find_vm_for_device(app_context, usb_info)
-                if res and not res.auto_attach:
+                attached_vms = app_context.dev_state.get_tag_attached_vms(res.tag) if res else []
+                if res and not res.auto_attach and attached_vms:
+                    logger.info(
+                        "USB device %s has manual-attach tag %s attached to %s, attaching",
+                        usb_info.friendly_name(),
+                        res.tag,
+                        attached_vms,
+                    )
+                    await attach_device(app_context, res, usb_info, False, attached_vms)
+                elif res and not res.auto_attach:
                     logger.info(
                         "USB device %s requires manual attach, leaving it on the host", usb_info.friendly_name()
                     )
